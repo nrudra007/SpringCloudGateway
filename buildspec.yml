@@ -1,0 +1,64 @@
+version: 0.2
+
+#env:
+#  variables:
+#    JAVA_HOME: "/usr/lib/jvm/java-8-openjdk-amd64"
+#  parameter-store:
+#    LOGIN_PASSWORD: /CodeBuild/dockerLoginPassword
+
+phases:
+#  install:
+#    commands:
+#      - echo Entered the install phase...
+#      - apt-get update -y
+#      - apt-get install -y maven
+#    finally:
+#      - echo This always runs even if the update or install command fails 
+  pre_build:
+    commands:
+      - echo Entered the pre_build phase...
+      - mvn clean install -DskipTests
+      - echo loggin into AWS ECR...
+      - aws --version
+      - REPOSITORY_URI=026508535563.dkr.ecr.us-east-2.amazonaws.com/first-demo-app-repo
+      - aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin $REPOSITORY_URI
+      - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - IMAGE_TAG=build-$(echo $CODEBUILD_BUILD_ID | awk -F":" '{print $2}')
+  build:
+    commands:
+      - echo Entered the build phase...
+      - echo Build started on `date`
+      - echo building the docker image
+#      - docker login -u User -p $LOGIN_PASSWORD
+      - docker build -t $REPOSITORY_URI:latest .
+      - docker tag $REPOSITORY_URI:latest $REPOSITORY_URI:$IMAGE_TAG
+  post_build:
+    commands:
+      - echo Entered the post_build phase...
+      - echo Build completed on `date`
+      - echo Pushing the docker images...
+      - docker push $REPOSITORY_URI:latest
+      - docker push $REPOSITORY_URI:$IMAGE_TAG
+      - echo Writing image definition file...
+      - printf '[{"name":"first-demo-app","imageUri":"%s"}]' $REPOSITORY_URI:$IMAGE_TAG > imagedefinitions.json
+      - echo Writing image definition file...
+      - DOCKER_CONTAINER_NAME=first-demo-app
+      - printf '[{"name":"%s","imageUri":"%s"}]' $DOCKER_CONTAINER_NAME $REPOSITORY_URI:$IMAGE_TAG
+      - echo $DOCKER_CONTAINER_NAME
+      - echo printing imagedefinitions.json
+      - cat imagedefinitions.json
+#reports:
+#  arn:aws:codebuild:your-region:your-aws-account-id:report-group/report-group-name-1:
+#    files:
+#      - "**/*"
+#    base-directory: 'target/tests/reports'
+#    discard-paths: no
+#  reportGroupCucumberJson:
+#    files:
+#      - 'cucumber/target/cucumber-tests.xml'
+#    discard-paths: yes
+#    file-format: CUCUMBERJSON # default is JUNITXML
+artifacts:
+  files:
+    - imagedefinitions.json
+    - target/first-demo-app.jar
